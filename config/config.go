@@ -53,10 +53,10 @@ func ParseConfig(programName, programHelp, programVersion string) *Config {
 		).Envar("BOSHI_EXPORTER_METRICS_BOSH_UUID").Default("").String(),
 
 		LogLevel: app.Flag(
-			"log.level", "Defines the minimum severity of messages that will be emitted, can be: debug, info, warn, error. ($BOSHI_EXPORTER_LOG_LEVEL)",
+			"log.level", "Defines the minimum severity of messages that will be emitted, can be: debug, info, warn, error. Default: info. ($BOSHI_EXPORTER_LOG_LEVEL)",
 		).Envar("BOSHI_EXPORTER_LOG_LEVEL").Default("info").String(),
 		LogPath: app.Flag(
-			"log.path", "Specifies where logs are written, can be: stdout, stderr, any file path. ($BOSHI_EXPORTER_LOG_PATH)",
+			"log.path", "Specifies where logs are written, can be: stdout, stderr, any file path. Default: stdout ($BOSHI_EXPORTER_LOG_PATH)",
 		).Envar("BOSHI_EXPORTER_LOG_PATH").Default("stdout").String(),
 	}
 	app.Version(programVersion)
