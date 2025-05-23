@@ -6,6 +6,7 @@ import (
 	"boshi_exporter/fetchers"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"net/http"
 	"os"
 
@@ -30,8 +31,15 @@ func createPromHttpHandler(metricsContext *config.MetricsContext, fetchers *fetc
 	return handler, nil
 }
 
-func initLogger() *zap.Logger {
-	logger, err := zap.NewProduction()
+func initLogger(logLevel, logPath string) *zap.Logger {
+	cfg := zap.NewProductionConfig()
+	level, err := zapcore.ParseLevel(logLevel)
+	if err != nil {
+		level = zapcore.InfoLevel
+	}
+	cfg.Level = zap.NewAtomicLevelAt(level)
+	cfg.OutputPaths = []string{logPath}
+	logger, err := cfg.Build()
 	if err != nil {
 		panic(err)
 	}
@@ -40,9 +48,9 @@ func initLogger() *zap.Logger {
 }
 
 func main() {
-	logger := initLogger()
-	defer func() { _ = logger.Sync() }()
 	cfg := config.ParseConfig(ProgramName, ProgramHelp, ProgramVersion)
+	logger := initLogger(*cfg.LogLevel, *cfg.LogPath)
+	defer func() { _ = logger.Sync() }()
 	metricsCtx := cfg.CreateMetricsContext()
 	allFetchers := fetchers.NewFetchers(*cfg.BoshSpecPath, *cfg.MonitPath)
 	handler, err := createPromHttpHandler(metricsCtx, allFetchers)

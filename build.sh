@@ -1,7 +1,7 @@
 #!/bin/bash
 
 PROGRAM_NAME="boshi_exporter"
-VERSION="0.0.1"
+VERSION="0.0.3"
 
 DIST_DIR=".dist"
 

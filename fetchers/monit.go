@@ -3,6 +3,7 @@ package fetchers
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -54,13 +55,32 @@ func NewMonitFetcher(monitPath string) *MonitFetcher {
 }
 
 // Fetch parses the output of `monit status` and returns a MonitStat map
-func (m *MonitFetcher) Fetch(ctx context.Context) (MonitStat, error) {
-	// Execute the monit command
-	out, err := exec.CommandContext(ctx, m.monitPath, "status").Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute monit: %w", err)
+func (m *MonitFetcher) Fetch(ctx context.Context) (stat MonitStat, err error) {
+	const timeoutSec = 5
+	ctx, cancel := context.WithTimeout(ctx, timeoutSec*time.Second)
+	defer cancel()
+
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic during Fetch: %v", r)
+		}
+	}()
+
+	cmd := exec.CommandContext(ctx, m.monitPath, "status")
+	output, execErr := cmd.CombinedOutput()
+	if execErr != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("monit status timed out after %d s: %w", timeoutSec, execErr)
+		}
+		return nil, fmt.Errorf("failed to execute monit: %w (output: %s)", execErr, strings.TrimSpace(string(output)))
 	}
-	return m.parseData(string(out))
+
+	stat, parseErr := m.parseData(string(output))
+	if parseErr != nil {
+		return nil, fmt.Errorf("failed to parse monit output: %w", parseErr)
+	}
+
+	return stat, nil
 }
 
 func (m *MonitFetcher) parseData(data string) (MonitStat, error) {
