@@ -1,0 +1,5 @@
+/.dist
+/.idea
+/dist
+/boshi_exporter
+*.tar.gz
