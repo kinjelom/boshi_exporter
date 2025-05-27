@@ -19,10 +19,6 @@ func TestSystemFetcher_FetchSystem(t *testing.T) {
 	if stat.CPU == nil {
 		t.Error("expected CPU to be non-nil")
 	}
-	cpuUsagePercent := stat.CPU.CPUUsageRatio()
-	if cpuUsagePercent <= 0 {
-		t.Error("expected CPU Usage Percent to be >0")
-	}
 	if stat.Memory == nil {
 		t.Error("expected Memory to be non-nil")
 	}
@@ -40,12 +36,6 @@ func TestSystemFetcher_FetchHost(t *testing.T) {
 
 	if stat == nil {
 		t.Fatal("fetchHost returned nil")
-	}
-	if stat.BootTime == 0 {
-		t.Error("expected BootTime > 0")
-	}
-	if stat.UpTime == 0 {
-		t.Error("expected UpTime > 0")
 	}
 
 	if stat.Load == nil {
@@ -68,9 +58,6 @@ func TestSystemFetcher_FetchCPU(t *testing.T) {
 	}
 	if stat.PhysicalCores <= 0 {
 		t.Errorf("expected PhysicalCores > 0, got %d", stat.PhysicalCores)
-	}
-	if stat.Times == nil {
-		t.Error("expected Times to be non-nil")
 	}
 }
 

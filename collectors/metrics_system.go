@@ -8,20 +8,13 @@ import (
 )
 
 type SystemMetrics struct {
-	HostBootTime *prometheus.GaugeVec
-	HostUpTime   *prometheus.GaugeVec
-	Load1        *prometheus.GaugeVec
-	Load5        *prometheus.GaugeVec
-	Load15       *prometheus.GaugeVec
+	Load1  *prometheus.GaugeVec
+	Load5  *prometheus.GaugeVec
+	Load15 *prometheus.GaugeVec
 
 	// CPU
 	CpuLogicalCoreCount  *prometheus.GaugeVec
 	CpuPhysicalCoreCount *prometheus.GaugeVec
-
-	CpuUserTime   *prometheus.GaugeVec
-	CpuSystemTime *prometheus.GaugeVec
-	CpuIdleTime   *prometheus.GaugeVec
-	CpuUsageRatio *prometheus.GaugeVec
 
 	// Virtual memory
 	VmSize       *prometheus.GaugeVec // Total virtual memory in bytes
@@ -62,20 +55,12 @@ func NewSystemMetrics(metricsContext *config.MetricsContext, spec *fetchers.Inst
 	}
 	return &SystemMetrics{
 
-		HostBootTime: promauto.NewGaugeVec(opts("host_boot_time_seconds", "System boot time as Unix timestamp"), []string{}),
-		HostUpTime:   promauto.NewGaugeVec(opts("host_uptime_seconds", "Time since system boot in seconds"), []string{}),
-
 		Load1:  promauto.NewGaugeVec(opts("load1", "1-minute load average"), []string{}),
 		Load5:  promauto.NewGaugeVec(opts("load5", "5-minute load average"), []string{}),
 		Load15: promauto.NewGaugeVec(opts("load15", "15-minute load average"), []string{}),
 
 		CpuLogicalCoreCount:  promauto.NewGaugeVec(opts("cpu_logical_core_count", "Number of logical CPU cores"), []string{}),
 		CpuPhysicalCoreCount: promauto.NewGaugeVec(opts("cpu_physical_core_count", "Number of physical CPU cores"), []string{}),
-
-		CpuUserTime:   promauto.NewGaugeVec(opts("cpu_seconds_user", "CPU time spent in user mode (seconds)"), []string{}),
-		CpuSystemTime: promauto.NewGaugeVec(opts("cpu_seconds_system", "CPU time spent in system mode (seconds)"), []string{}),
-		CpuIdleTime:   promauto.NewGaugeVec(opts("cpu_seconds_idle", "CPU time spent idle (seconds)"), []string{}),
-		CpuUsageRatio: promauto.NewGaugeVec(opts("cpu_usage_ratio", "CPU utilization fraction (1=100%)"), []string{}),
 
 		VmSize:       promauto.NewGaugeVec(opts("memory_virtual_size_bytes", "Total virtual memory in bytes"), []string{}),
 		VmAvailable:  promauto.NewGaugeVec(opts("memory_virtual_available_bytes", "Available virtual memory in bytes"), []string{}),
@@ -101,10 +86,6 @@ func NewSystemMetrics(metricsContext *config.MetricsContext, spec *fetchers.Inst
 }
 
 func (m *SystemMetrics) Emit(stat *fetchers.SystemStat) {
-	// Host
-	m.HostBootTime.With(nil).Set(float64(stat.Host.BootTime))
-	m.HostUpTime.With(nil).Set(float64(stat.Host.UpTime))
-
 	// Load averages
 	if stat.Host.Load != nil {
 		m.Load1.With(nil).Set(stat.Host.Load.Load1)
@@ -115,12 +96,6 @@ func (m *SystemMetrics) Emit(stat *fetchers.SystemStat) {
 	// CPU
 	m.CpuLogicalCoreCount.With(nil).Set(float64(stat.CPU.LogicalCores))
 	m.CpuPhysicalCoreCount.With(nil).Set(float64(stat.CPU.PhysicalCores))
-	if stat.CPU.Times != nil {
-		m.CpuUserTime.With(nil).Set(stat.CPU.Times.User)
-		m.CpuSystemTime.With(nil).Set(stat.CPU.Times.System)
-		m.CpuIdleTime.With(nil).Set(stat.CPU.Times.Idle)
-		m.CpuUsageRatio.With(nil).Set(stat.CPU.CPUUsageRatio())
-	}
 
 	// Memory
 	if stat.Memory.VM != nil {

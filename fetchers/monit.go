@@ -14,48 +14,72 @@ import (
 
 // MonitFetcher invokes `monit status`
 type MonitFetcher struct {
-	monitPath  string // /var/vcap/bosh/bin/monit
-	kvSplitter *regexp.Regexp
-	reProcess  *regexp.Regexp
-	reSystem   *regexp.Regexp
+	monitPath string // /var/vcap/bosh/bin/monit
+	reBanner  *regexp.Regexp
+	reSection *regexp.Regexp
+	reMetric  *regexp.Regexp
 }
 
 // MonitProcessStatus represents the status of a single process or the system
 type MonitProcessStatus struct {
-	Status           string // process status (e.g., running)
+	Status           string // service status (e.g., running)
 	MonitoringStatus string // whether monitoring is active (e.g., monitored)
 	PID              string // process ID
 	ParentPID        string // parent process ID
 
-	Uptime             time.Duration // uptime since last start
-	Children           int           // number of child processes
-	MemoryBytes        int           // memory usage in bytes
-	MemoryBytesTotal   int           // total memory usage in bytes
-	MemoryPercent      float64       // memory usage as a percentage
-	MemoryPercentTotal float64       // total memory percentage
-	CPUPercent         float64       // CPU usage as a percentage
-	CPUPercentTotal    float64       // total CPU percentage
-	DataCollected      time.Time     // timestamp when data was collected
+	Uptime                 time.Duration // uptime since last start
+	Children               int           // number of child processes
+	MemoryUsedBytes        uint64        // memory used in bytes
+	MemoryUsedBytesTotal   uint64        // total memory usage in bytes
+	MemoryUsedPercent      float64       // memory usage as a percentage
+	MemoryUsedPercentTotal float64       // total memory percentage
+	CPUUsedPercent         float64       // CPU usage as a percentage
+	CPUUsedPercentTotal    float64       // total CPU percentage
+
+	DataCollected time.Time // timestamp when data was collected
+}
+
+// MonitSystemStatus holds parsed metrics from “bosh monit”
+type MonitSystemStatus struct {
+	Status           string // service status (e.g., "running")
+	MonitoringStatus string // whether monitoring is active (e.g., "monitored")
+
+	LoadAvg1          float64   // 1-minute load average
+	LoadAvg5          float64   // 5-minute load average
+	LoadAvg15         float64   // 15-minute load average
+	CPUUserPercent    float64   // CPU time spent in user mode (%)
+	CPUSystemPercent  float64   // CPU time spent in kernel/system mode (%)
+	CPUWaitPercent    float64   // CPU time spent waiting for I/O (%)
+	MemoryUsedBytes   uint64    // memory used in bytes
+	MemoryUsedPercent float64   // memory used as a percentage of total
+	SwapUsedBytes     uint64    // swap used in bytes
+	SwapUsedPercent   float64   // swap used as a percentage of total
+	DataCollected     time.Time // timestamp when data was collected
 }
 
 // MonitStat maps process or system names to their status
-type MonitStat map[string]MonitProcessStatus
+type MonitStat struct {
+	Version   string
+	Uptime    time.Duration
+	Processes map[string]MonitProcessStatus
+	System    MonitSystemStatus
+}
 
 // NewMonitFetcher creates a new MonitFetcher with the given path to the monit binary
 func NewMonitFetcher(monitPath string) *MonitFetcher {
 	return &MonitFetcher{
 		monitPath: monitPath,
-		// regex to split on two or more spaces (separates key and value)
-		kvSplitter: regexp.MustCompile(`\s{2,}`),
+		// regex to check monit version, uptime
+		reBanner: regexp.MustCompile(`^The Monit daemon (\S+) uptime: (.*)$`),
+		// regex to detect section start
+		reSection: regexp.MustCompile(`^(\S+) '(.*)'$`),
 		// regex to detect process sections
-		reProcess: regexp.MustCompile(`^Process '(.+)'`),
-		// regex to detect a system section
-		reSystem: regexp.MustCompile(`^System '(.+)'`),
+		reMetric: regexp.MustCompile(`^\s{2}(\S+(\s\S+)*)\s{2,}(.*)$`),
 	}
 }
 
 // Fetch parses the output of `monit status` and returns a MonitStat map
-func (m *MonitFetcher) Fetch(ctx context.Context) (stat MonitStat, err error) {
+func (m *MonitFetcher) Fetch(ctx context.Context) (stat *MonitStat, err error) {
 	const timeoutSec = 5
 	ctx, cancel := context.WithTimeout(ctx, timeoutSec*time.Second)
 	defer cancel()
@@ -83,93 +107,157 @@ func (m *MonitFetcher) Fetch(ctx context.Context) (stat MonitStat, err error) {
 	return stat, nil
 }
 
-func (m *MonitFetcher) parseData(data string) (MonitStat, error) {
+func (m *MonitFetcher) parseData(data string) (stat *MonitStat, err error) {
+	stat = &MonitStat{
+		Processes: make(map[string]MonitProcessStatus),
+	}
 	scanner := bufio.NewScanner(strings.NewReader(data))
-
-	statusMap := make(MonitStat)
-	var currentName string
-	var currentStatus MonitProcessStatus
-
-	// commit adds the currentStatus to statusMap under currentName
-	commit := func() {
-		if currentName != "" {
-			statusMap[currentName] = currentStatus
-		}
-	}
-
+	bannerLine := ""
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
+		bannerLine = strings.TrimSpace(scanner.Text())
+		if bannerLine != "" {
+			break
 		}
-		// new process section
-		if sm := m.reProcess.FindStringSubmatch(line); sm != nil {
-			commit()
-			currentName = sm[1]
-			currentStatus = MonitProcessStatus{}
-			continue
-		}
-		// system section
-		if sm := m.reSystem.FindStringSubmatch(line); sm != nil {
-			commit()
-			currentName = sm[1]
-			currentStatus = MonitProcessStatus{}
-			continue
-		}
-		// split into key and value
-		parts := m.kvSplitter.Split(line, 2)
-		if len(parts) != 2 {
-			continue
-		}
-		key := strings.TrimSpace(parts[0])
-		val := strings.TrimSpace(parts[1])
-
-		switch key {
-		case "status":
-			currentStatus.Status = val
-		case "monitoring status":
-			currentStatus.MonitoringStatus = val
-		case "pid":
-			currentStatus.PID = val
-		case "parent pid":
-			currentStatus.ParentPID = val
-		case "uptime":
-			if d, err := parseUptime(val); err == nil {
-				currentStatus.Uptime = d
-			}
-		case "children":
-			currentStatus.Children = atoi(val)
-		case "memory kilobytes":
-			currentStatus.MemoryBytes = atoi(val) * 1024
-		case "memory kilobytes total":
-			currentStatus.MemoryBytesTotal = atoi(val) * 1024
-		case "memory percent":
-			currentStatus.MemoryPercent = parsePercent(val)
-		case "memory percent total":
-			currentStatus.MemoryPercentTotal = parsePercent(val)
-		case "cpu percent":
-			currentStatus.CPUPercent = parsePercent(val)
-		case "cpu percent total":
-			currentStatus.CPUPercentTotal = parsePercent(val)
-		case "data collected":
-			if t, err := time.Parse("Mon Jan 2 15:04:05 2006", val); err == nil {
-				currentStatus.DataCollected = t
+	}
+	if banner := m.reBanner.FindStringSubmatch(bannerLine); banner != nil {
+		if len(banner) == 3 {
+			stat.Version = banner[1]
+			if d, err := parseUptime(banner[2]); err == nil {
+				stat.Uptime = d
 			}
 		}
 	}
-	// commit the last section
-	commit()
+	if stat.Version == "" {
+		return nil, fmt.Errorf("unsupported monit output: %s", bannerLine)
+	}
+
+	var currentServiceKind string
+	var currentServiceName string
+	var currentProcessStatus MonitProcessStatus
+	var currentSystemStatus MonitSystemStatus
+	commitService := func() {
+		if currentServiceName != "" {
+			if currentServiceKind == "Process" {
+				stat.Processes[currentServiceName] = currentProcessStatus
+			}
+			if currentServiceKind == "System" {
+				stat.System = currentSystemStatus
+			}
+		}
+		currentProcessStatus = MonitProcessStatus{}
+		currentSystemStatus = MonitSystemStatus{}
+	}
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) != "" {
+			if section := m.reSection.FindStringSubmatch(line); section != nil {
+				commitService()
+				if len(section) == 3 {
+					currentServiceKind = section[1]
+					currentServiceName = section[2]
+				}
+			} else if metric := m.reMetric.FindStringSubmatch(line); metric != nil {
+				if len(metric) == 4 {
+					key := strings.TrimSpace(metric[1])
+					val := strings.TrimSpace(metric[3])
+					if currentServiceKind == "Process" {
+						currentProcessStatus.parseMetricEntry(key, val)
+					} else if currentServiceKind == "System" {
+						currentSystemStatus.parseMetricEntry(key, val)
+					}
+				}
+			}
+		}
+	}
+	commitService()
 
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("error scanning data: %w", err)
 	}
-	return statusMap, nil
+	return stat, nil
+}
+
+func (p *MonitProcessStatus) parseMetricEntry(key, val string) {
+	switch key {
+	case "status":
+		p.Status = val
+	case "monitoring status":
+		p.MonitoringStatus = val
+	case "pid":
+		p.PID = val
+	case "parent pid":
+		p.ParentPID = val
+	case "uptime":
+		if d, err := parseUptime(val); err == nil {
+			p.Uptime = d
+		}
+	case "children":
+		p.Children = atoi(val)
+	case "memory kilobytes":
+		p.MemoryUsedBytes = atouint(val) * 1024
+	case "memory kilobytes total":
+		p.MemoryUsedBytesTotal = atouint(val) * 1024
+	case "memory percent":
+		p.MemoryUsedPercent = parsePercent(val)
+	case "memory percent total":
+		p.MemoryUsedPercentTotal = parsePercent(val)
+	case "cpu percent":
+		p.CPUUsedPercent = parsePercent(val)
+	case "cpu percent total":
+		p.CPUUsedPercentTotal = parsePercent(val)
+	case "data collected":
+		if t, err := time.Parse("Mon Jan 2 15:04:05 2006", val); err == nil {
+			p.DataCollected = t
+		}
+	}
+}
+
+// parseMetricEntry maps a single “key: value” line into struct fields
+func (s *MonitSystemStatus) parseMetricEntry(key, val string) {
+	switch key {
+	case "status":
+		s.Status = val
+
+	case "monitoring status":
+		s.MonitoringStatus = val
+
+	case "load average":
+		// val example: "[0.09] [0.10] [0.04]"
+		_, _ = fmt.Sscanf(val, "[%f] [%f] [%f]", &s.LoadAvg1, &s.LoadAvg5, &s.LoadAvg15)
+
+	case "cpu":
+		// val example: "2.0%us 4.0%sy 0.0%wa"
+		_, _ = fmt.Sscanf(val, "%f%%us %f%%sy %f%%wa",
+			&s.CPUUserPercent, &s.CPUSystemPercent, &s.CPUWaitPercent)
+
+	case "memory usage":
+		// val example: "227240 kB [23.0%]"
+		var kb uint64
+		_, _ = fmt.Sscanf(val, "%d kB [%f%%]", &kb, &s.MemoryUsedPercent)
+		s.MemoryUsedBytes = kb * 1024
+
+	case "swap usage":
+		// val example: "256 kB [0.0%]"
+		var kb uint64
+		_, _ = fmt.Sscanf(val, "%d kB [%f%%]", &kb, &s.SwapUsedPercent)
+		s.SwapUsedBytes = kb * 1024
+
+	case "data collected":
+		// val example: "Fri May 23 11:03:35 2025"
+		if t, err := time.Parse("Mon Jan 2 15:04:05 2006", val); err == nil {
+			s.DataCollected = t
+		}
+	}
 }
 
 // atoi converts string to int, returns 0 on error
 func atoi(s string) int {
 	i, _ := strconv.Atoi(strings.TrimSpace(s))
 	return i
+}
+func atouint(s string) uint64 {
+	i, _ := strconv.Atoi(strings.TrimSpace(s))
+	return uint64(i)
 }
 
 // parsePercent removes '%' and converts to float64, returns 0 on error
