@@ -14,6 +14,7 @@ const (
 	monitProcessNameLabel      = "process_name"
 	monitProcessPidLabel       = "process_pid"
 	monitProcessParentPidLabel = "process_parent_pid"
+	monitCPUModeLabel          = "mode"
 )
 
 type MonitMetrics struct {
@@ -21,13 +22,10 @@ type MonitMetrics struct {
 	MonitUptime *prometheus.GaugeVec
 
 	SysStatusInfo                *prometheus.GaugeVec
-	SysUptimeSeconds             *prometheus.GaugeVec
 	SysLoadAvg1                  *prometheus.GaugeVec
 	SysLoadAvg5                  *prometheus.GaugeVec
 	SysLoadAvg15                 *prometheus.GaugeVec
-	SysCPUUserRatio              *prometheus.GaugeVec
-	SysCPUSystemRatio            *prometheus.GaugeVec
-	SysCPUWaitRatio              *prometheus.GaugeVec
+	SysCPURatio                  *prometheus.GaugeVec
 	SysMemoryUsedBytes           *prometheus.GaugeVec
 	SysMemoryUsageRatio          *prometheus.GaugeVec
 	SysSwapUsedBytes             *prometheus.GaugeVec
@@ -59,62 +57,67 @@ func NewMonitMetrics(metricsContext *config.MetricsContext, spec *fetchers.Insta
 			ConstLabels: *constantLabels,
 		}
 	}
-	monitInfoLabels := []string{monitVersionLabel}
-	var monitLabels []string
-	sysInfoLabels := []string{monitMonitoringStatusLabel, monitServiceStatusLabel}
-	var sysLabels []string
-	procInfoLabels := []string{monitProcessNameLabel, monitProcessPidLabel}
-	procLabels := []string{monitProcessNameLabel, monitMonitoringStatusLabel, monitServiceStatusLabel, monitProcessPidLabel, monitProcessParentPidLabel}
+	procInfoLabels := []string{monitProcessNameLabel, monitMonitoringStatusLabel, monitServiceStatusLabel, monitProcessPidLabel, monitProcessParentPidLabel}
+	procLabels := []string{monitProcessNameLabel, monitProcessPidLabel}
 	return &MonitMetrics{
 		// Monit metrics
-		MonitInfo:   promauto.NewGaugeVec(opts("monit_info", "The Monit daemon information", instanceLabels), monitInfoLabels),
-		MonitUptime: promauto.NewGaugeVec(opts("uptime_seconds", "Monit uptime since last start (seconds)", instanceLabels), monitLabels),
+		MonitInfo:   promauto.NewGaugeVec(opts("info", "The Monit daemon information", instanceLabels), []string{monitVersionLabel}),
+		MonitUptime: promauto.NewGaugeVec(opts("uptime_seconds", "Monit uptime since last start (seconds)", instanceLabels), []string{}),
 
 		// System metrics
-		SysStatusInfo:                promauto.NewGaugeVec(opts("system_status_info", "System status info (e.g., running, monitored)", instanceLabels), sysInfoLabels),
-		SysUptimeSeconds:             promauto.NewGaugeVec(opts("system_uptime_seconds", "System uptime since last boot (seconds)", instanceLabels), sysLabels),
-		SysLoadAvg1:                  promauto.NewGaugeVec(opts("system_load_avg_1m", "System 1-minute load average", instanceLabels), sysLabels),
-		SysLoadAvg5:                  promauto.NewGaugeVec(opts("system_load_avg_5m", "System 5-minute load average", instanceLabels), sysLabels),
-		SysLoadAvg15:                 promauto.NewGaugeVec(opts("system_load_avg_15m", "System 15-minute load average", instanceLabels), sysLabels),
-		SysCPUUserRatio:              promauto.NewGaugeVec(opts("system_cpu_user_ratio", "System CPU time spent in user mode fraction (1=100%)", instanceLabels), sysLabels),
-		SysCPUSystemRatio:            promauto.NewGaugeVec(opts("system_cpu_system_ratio", "System CPU time spent in kernel/system mode fraction (1=100%)", instanceLabels), sysLabels),
-		SysCPUWaitRatio:              promauto.NewGaugeVec(opts("system_cpu_wait_ratio", "System CPU time spent waiting for I/O fraction (1=100%)", instanceLabels), sysLabels),
-		SysMemoryUsedBytes:           promauto.NewGaugeVec(opts("system_memory_used_bytes", "System memory used in bytes", instanceLabels), sysLabels),
-		SysMemoryUsageRatio:          promauto.NewGaugeVec(opts("system_memory_usage_ratio", "System memory used as a fraction of total (1=100%)", instanceLabels), sysLabels),
-		SysSwapUsedBytes:             promauto.NewGaugeVec(opts("system_swap_used_bytes", "System swap used in bytes", instanceLabels), sysLabels),
-		SysSwapUsageRatio:            promauto.NewGaugeVec(opts("system_swap_usage_ratio", "System swap used as a fraction of total (1=100%)", instanceLabels), sysLabels),
-		SysCollectedTimestampSeconds: promauto.NewGaugeVec(opts("system_collected_timestamp_seconds", "System data collection time as Unix timestamp (seconds).", instanceLabels), sysLabels),
+		SysStatusInfo:                promauto.NewGaugeVec(opts("system_status_info", "System status info (e.g., running, monitored)", instanceLabels), []string{monitMonitoringStatusLabel, monitServiceStatusLabel}),
+		SysLoadAvg1:                  promauto.NewGaugeVec(opts("system_load1", "System 1-minute load average", instanceLabels), []string{}),
+		SysLoadAvg5:                  promauto.NewGaugeVec(opts("system_load5", "System 5-minute load average", instanceLabels), []string{}),
+		SysLoadAvg15:                 promauto.NewGaugeVec(opts("system_load15", "System 15-minute load average", instanceLabels), []string{}),
+		SysCPURatio:                  promauto.NewGaugeVec(opts("system_cpu_ratio", "System CPU time spent in the mode fraction (1=100%)", instanceLabels), []string{monitCPUModeLabel}),
+		SysMemoryUsedBytes:           promauto.NewGaugeVec(opts("system_memory_used_bytes", "System memory used in bytes", instanceLabels), []string{}),
+		SysMemoryUsageRatio:          promauto.NewGaugeVec(opts("system_memory_usage_ratio", "System memory used as a fraction of total (1=100%)", instanceLabels), []string{}),
+		SysSwapUsedBytes:             promauto.NewGaugeVec(opts("system_swap_used_bytes", "System swap used in bytes", instanceLabels), []string{}),
+		SysSwapUsageRatio:            promauto.NewGaugeVec(opts("system_swap_usage_ratio", "System swap used as a fraction of total (1=100%)", instanceLabels), []string{}),
+		SysCollectedTimestampSeconds: promauto.NewGaugeVec(opts("system_collected_timestamp_seconds", "System data collection time as Unix timestamp (seconds).", instanceLabels), []string{}),
 
 		// Process metrics
-		ProcStatusInfo:                promauto.NewGaugeVec(opts("process_status_info", "Monit process and monitoring status information", instanceLabels), procLabels),
-		ProcUptime:                    promauto.NewGaugeVec(opts("process_uptime_seconds", "Monit process uptime since last start (seconds)", instanceLabels), procInfoLabels),
-		ProcChildrenCount:             promauto.NewGaugeVec(opts("process_children_count", "Number of child processes", instanceLabels), procInfoLabels),
-		ProcMemoryUsedBytes:           promauto.NewGaugeVec(opts("process_memory_used_bytes", "Process memory used in bytes", instanceLabels), procInfoLabels),
-		ProcMemoryUsedBytesTotal:      promauto.NewGaugeVec(opts("process_memory_used_bytes_total", "Total process (with subprocesses) memory used in bytes", instanceLabels), procInfoLabels),
-		ProcMemoryUsageRatio:          promauto.NewGaugeVec(opts("process_memory_usage_ratio", "Process memory usage fraction (1=100%)", instanceLabels), procInfoLabels),
-		ProcMemoryUsageRatioTotal:     promauto.NewGaugeVec(opts("process_memory_usage_ratio_total", "Total process (with subprocesses) memory usage fraction (1=100%)", instanceLabels), procInfoLabels),
-		ProcCPUUsageRatio:             promauto.NewGaugeVec(opts("process_cpu_usage_ratio", "Process CPU usage fraction (1=100%)", instanceLabels), procInfoLabels),
-		ProcCPUUsageRatioTotal:        promauto.NewGaugeVec(opts("process_cpu_usage_ratio_total", "Total process (with subprocesses) CPU usage fraction (1=100%)", instanceLabels), procInfoLabels),
-		ProcCollectedTimestampSeconds: promauto.NewGaugeVec(opts("process_collected_timestamp_seconds", "Process data collection time as Unix timestamp (seconds).", instanceLabels), procInfoLabels),
+		ProcStatusInfo:                promauto.NewGaugeVec(opts("process_status_info", "Monit process and monitoring status information", instanceLabels), procInfoLabels),
+		ProcUptime:                    promauto.NewGaugeVec(opts("process_uptime_seconds", "Monit process uptime since last start (seconds)", instanceLabels), procLabels),
+		ProcChildrenCount:             promauto.NewGaugeVec(opts("process_children_count", "Number of child processes", instanceLabels), procLabels),
+		ProcMemoryUsedBytes:           promauto.NewGaugeVec(opts("process_memory_used_bytes", "Process memory used in bytes", instanceLabels), procLabels),
+		ProcMemoryUsedBytesTotal:      promauto.NewGaugeVec(opts("process_memory_used_bytes_total", "Total process (with subprocesses) memory used in bytes", instanceLabels), procLabels),
+		ProcMemoryUsageRatio:          promauto.NewGaugeVec(opts("process_memory_usage_ratio", "Process memory usage fraction (1=100%)", instanceLabels), procLabels),
+		ProcMemoryUsageRatioTotal:     promauto.NewGaugeVec(opts("process_memory_usage_ratio_total", "Total process (with subprocesses) memory usage fraction (1=100%)", instanceLabels), procLabels),
+		ProcCPUUsageRatio:             promauto.NewGaugeVec(opts("process_cpu_usage_ratio", "Process CPU usage fraction (1=100%)", instanceLabels), procLabels),
+		ProcCPUUsageRatioTotal:        promauto.NewGaugeVec(opts("process_cpu_usage_ratio_total", "Total process (with subprocesses) CPU usage fraction (1=100%)", instanceLabels), procLabels),
+		ProcCollectedTimestampSeconds: promauto.NewGaugeVec(opts("process_collected_timestamp_seconds", "Process data collection time as Unix timestamp (seconds).", instanceLabels), procLabels),
 	}
 }
 
 func (m *MonitMetrics) Emit(stat *fetchers.MonitStat) {
+	m.MonitInfo.Reset()
 	m.MonitInfo.With(prometheus.Labels{monitVersionLabel: stat.Version}).Set(1)
 	m.MonitUptime.With(prometheus.Labels{}).Set(stat.Uptime.Seconds())
+	m.SysStatusInfo.Reset()
 	m.SysStatusInfo.With(prometheus.Labels{monitMonitoringStatusLabel: stat.System.MonitoringStatus, monitServiceStatusLabel: stat.System.Status}).Set(1)
 	m.SysLoadAvg1.With(prometheus.Labels{}).Set(stat.System.LoadAvg1)
 	m.SysLoadAvg5.With(prometheus.Labels{}).Set(stat.System.LoadAvg5)
 	m.SysLoadAvg15.With(prometheus.Labels{}).Set(stat.System.LoadAvg15)
-	m.SysCPUUserRatio.With(prometheus.Labels{}).Set(stat.System.CPUUserPercent / 100)
-	m.SysCPUSystemRatio.With(prometheus.Labels{}).Set(stat.System.CPUSystemPercent / 100)
-	m.SysCPUWaitRatio.With(prometheus.Labels{}).Set(stat.System.CPUWaitPercent / 100)
+	m.SysCPURatio.With(prometheus.Labels{monitCPUModeLabel: "user"}).Set(stat.System.CPUUserPercent / 100)
+	m.SysCPURatio.With(prometheus.Labels{monitCPUModeLabel: "system"}).Set(stat.System.CPUSystemPercent / 100)
+	m.SysCPURatio.With(prometheus.Labels{monitCPUModeLabel: "iowait"}).Set(stat.System.CPUIOWaitPercent / 100)
 	m.SysMemoryUsedBytes.With(prometheus.Labels{}).Set(float64(stat.System.MemoryUsedBytes))
 	m.SysMemoryUsageRatio.With(prometheus.Labels{}).Set(stat.System.MemoryUsedPercent / 100)
 	m.SysSwapUsedBytes.With(prometheus.Labels{}).Set(float64(stat.System.SwapUsedBytes))
 	m.SysSwapUsageRatio.With(prometheus.Labels{}).Set(stat.System.SwapUsedPercent / 100)
 	m.SysCollectedTimestampSeconds.With(prometheus.Labels{}).Set(float64(stat.System.DataCollected.Unix()))
 
+	m.ProcStatusInfo.Reset()
+	m.ProcUptime.Reset()
+	m.ProcChildrenCount.Reset()
+	m.ProcMemoryUsedBytes.Reset()
+	m.ProcMemoryUsedBytesTotal.Reset()
+	m.ProcMemoryUsageRatio.Reset()
+	m.ProcMemoryUsageRatioTotal.Reset()
+	m.ProcCPUUsageRatio.Reset()
+	m.ProcCPUUsageRatioTotal.Reset()
+	m.ProcCollectedTimestampSeconds.Reset()
 	for name, status := range stat.Processes {
 		procInfoLabels := prometheus.Labels{
 			monitProcessNameLabel:      name,
@@ -124,7 +127,6 @@ func (m *MonitMetrics) Emit(stat *fetchers.MonitStat) {
 			monitProcessParentPidLabel: status.ParentPID,
 		}
 		m.ProcStatusInfo.With(procInfoLabels).Set(1)
-
 		procLabels := prometheus.Labels{
 			monitProcessNameLabel: name,
 			monitProcessPidLabel:  status.PID,

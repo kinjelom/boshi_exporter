@@ -49,7 +49,7 @@ type MonitSystemStatus struct {
 	LoadAvg15         float64   // 15-minute load average
 	CPUUserPercent    float64   // CPU time spent in user mode (%)
 	CPUSystemPercent  float64   // CPU time spent in kernel/system mode (%)
-	CPUWaitPercent    float64   // CPU time spent waiting for I/O (%)
+	CPUIOWaitPercent  float64   // CPU time spent waiting for I/O (%)
 	MemoryUsedBytes   uint64    // memory used in bytes
 	MemoryUsedPercent float64   // memory used as a percentage of total
 	SwapUsedBytes     uint64    // swap used in bytes
@@ -228,7 +228,7 @@ func (s *MonitSystemStatus) parseMetricEntry(key, val string) {
 	case "cpu":
 		// val example: "2.0%us 4.0%sy 0.0%wa"
 		_, _ = fmt.Sscanf(val, "%f%%us %f%%sy %f%%wa",
-			&s.CPUUserPercent, &s.CPUSystemPercent, &s.CPUWaitPercent)
+			&s.CPUUserPercent, &s.CPUSystemPercent, &s.CPUIOWaitPercent)
 
 	case "memory usage":
 		// val example: "227240 kB [23.0%]"

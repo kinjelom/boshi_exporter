@@ -20,17 +20,6 @@ const (
 	ProgramHelp = "Bosh Instance Exporter"
 )
 
-func createPromHttpHandler(metricsContext *config.MetricsContext, fetchers *fetchers.Fetchers) (http.Handler, error) {
-	registry := prometheus.NewRegistry()
-	collector, err := collectors.NewBoshInstanceCollector(ProgramName, ProgramVersion, metricsContext, fetchers)
-	if err != nil {
-		return nil, err
-	}
-	registry.MustRegister(collector)
-	handler := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
-	return handler, nil
-}
-
 func initLogger(logLevel, logPath string) *zap.Logger {
 	cfg := zap.NewProductionConfig()
 	level, err := zapcore.ParseLevel(logLevel)
@@ -45,6 +34,17 @@ func initLogger(logLevel, logPath string) *zap.Logger {
 	}
 	zap.ReplaceGlobals(logger)
 	return logger
+}
+
+func createPromHttpHandler(metricsContext *config.MetricsContext, fetchers *fetchers.Fetchers) (http.Handler, error) {
+	registry := prometheus.NewRegistry()
+	collector, err := collectors.NewBoshInstanceCollector(ProgramName, ProgramVersion, metricsContext, fetchers)
+	if err != nil {
+		return nil, err
+	}
+	registry.MustRegister(collector)
+	handler := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
+	return handler, nil
 }
 
 func main() {
@@ -67,8 +67,8 @@ func main() {
 		"pid", os.Getpid(),
 	)
 
-	http.Handle(*cfg.TelemetryPath, promhttp.Handler())
-	err = http.ListenAndServe(*cfg.ListenAddress, handler)
+	http.Handle(*cfg.TelemetryPath, handler)
+	err = http.ListenAndServe(*cfg.ListenAddress, nil)
 	if err != nil {
 		zap.L().Error("Failed to start http server", zap.Error(err))
 		os.Exit(1)
